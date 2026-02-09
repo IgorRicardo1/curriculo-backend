@@ -1,8 +1,9 @@
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+
 require('dotenv').config();
 
 const app = express();
@@ -16,16 +17,49 @@ const pool = new Pool({
 
 // Rotas
 
-//teste perfil
 app.get('/perfil', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM perfil');
-        res.json(result.rows);
+        const query = `
+            SELECT 
+                p.*, 
+                -- Busca as Experiências
+                COALESCE((
+                    SELECT json_agg(e.* ORDER BY e.id DESC) 
+                    FROM experiencias e 
+                    WHERE e.perfil_id = p.id
+                ), '[]') AS experiencias,
+                
+                -- Busca a Formação
+                COALESCE((
+                    SELECT json_agg(f.* ORDER BY f.id DESC) 
+                    FROM formacao f 
+                    WHERE f.perfil_id = p.id
+                ), '[]') AS formacao,
+
+                -- NOVO: Busca os Projetos
+                COALESCE((
+                    SELECT json_agg(proj.* ORDER BY proj.id DESC) 
+                    FROM projetos proj 
+                    WHERE proj.perfil_id = p.id
+                ), '[]') AS projetos
+
+            FROM perfil p
+            LIMIT 1; 
+        `;
+
+        const result = await pool.query(query);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Perfil não encontrado' });
+        }
+
+        res.json(result.rows[0]);
+
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Erro ao conectar no banco de dados' });
+        res.status(500).json({ error: 'Erro ao buscar dados do perfil' });
     }
-})
+});
 
 //rota login
 app.post('/login', async (req, res) => {
@@ -39,7 +73,6 @@ app.post('/login', async (req, res) => {
             return res.status(401).json({ error: 'Email ou senha inválidos' });
         }
 
-        // A LINHA QUE FALTAVA:
         const senhaBate = await bcrypt.compare(senha, usuario.senha);
 
         if (!senhaBate) {
@@ -68,3 +101,4 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`)
 });
+
