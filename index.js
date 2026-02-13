@@ -16,7 +16,6 @@ const pool = new Pool({
 })
 
 // Rotas
-
 app.get('/perfil', async (req, res) => {
     try {
         const query = `
@@ -96,6 +95,33 @@ app.post('/login', async (req, res) => {
         res.status(500).json({ error: 'Erro no servidor' });
     }
 });
+//delete
+app.delete('/projetos/:id', async (req, res) => {
+
+    try {
+        const { id } = req.params;
+        await pool.query('DELETE FROM projetos WHERE id = $1', [id]);
+        res.json({ message: "Deletado!" });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Erro ao deletar" });
+    }
+})
+
+//post
+app.post('/projetos', async (req, res) => {
+    const { titulo, descricao, imagem_url, link_repo, tags } = req.body;
+    const perfil_id = 1;
+    try {
+        const querySQL = 'INSERT INTO projetos (perfil_id, titulo, descricao, imagem_url, link_repo, tags) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *;';
+        const valores = [perfil_id, titulo, descricao, imagem_url, link_repo, tags];
+        const resultado = await pool.query(querySQL, valores);
+        res.json(resultado.rows[0]);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Erro ao criar projeto" });
+    }
+})
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
