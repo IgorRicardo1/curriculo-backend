@@ -14,7 +14,7 @@ app.use(helmet());
 
 const allowedOrigins = [
   'http://localhost:5173',
-  'https://seu-site-igor.vercel.app' // ATUALIZE AQUI após o deploy do frontend
+  'https://curriculo-frontend.vercel.app'
 ];
 
 app.use(cors({
