@@ -3,45 +3,77 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+
+app.use(helmet());
+
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://seu-site-igor.vercel.app' // ATUALIZE AQUI após o deploy do frontend
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Bloqueado pelo CORS: Acesso não autorizado.'));
+    }
+  }
+}));
+
 app.use(express.json());
 
-// Configuração
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: "Muitas tentativas de login. Tente novamente após 15 minutos." }
+});
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-})
+    ssl: {
+        rejectUnauthorized: false
+    }
+});
 
-// Rotas
+const autenticarToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ error: 'Acesso negado: Token não fornecido' });
+    }
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, usuario) => {
+        if (err) {
+            return res.status(403).json({ error: 'Token inválido ou expirado' });
+        }
+        req.usuario = usuario;
+        next();
+    });
+};
+
+app.get('/', (req, res) => {
+    res.json({
+        status: "Online",
+        api: "Igor Portfolio API v1.0"
+    });
+});
+
 app.get('/perfil', async (req, res) => {
     try {
         const query = `
             SELECT 
                 p.*, 
-                -- Busca as Experiências
-                COALESCE((
-                    SELECT json_agg(e.* ORDER BY e.id DESC) 
-                    FROM experiencias e 
-                    WHERE e.perfil_id = p.id
-                ), '[]') AS experiencias,
-                
-                -- Busca a Formação
-                COALESCE((
-                    SELECT json_agg(f.* ORDER BY f.id DESC) 
-                    FROM formacao f 
-                    WHERE f.perfil_id = p.id
-                ), '[]') AS formacao,
-
-                -- NOVO: Busca os Projetos
-                COALESCE((
-                    SELECT json_agg(proj.* ORDER BY proj.id DESC) 
-                    FROM projetos proj 
-                    WHERE proj.perfil_id = p.id
-                ), '[]') AS projetos
-
+                COALESCE((SELECT json_agg(e.* ORDER BY e.id DESC) FROM experiencias e WHERE e.perfil_id = p.id), '[]') AS experiencias,
+                COALESCE((SELECT json_agg(f.* ORDER BY f.id DESC) FROM formacao f WHERE f.perfil_id = p.id), '[]') AS formacao,
+                COALESCE((SELECT json_agg(proj.* ORDER BY proj.id DESC) FROM projetos proj WHERE proj.perfil_id = p.id), '[]') AS projetos
             FROM perfil p
             LIMIT 1; 
         `;
@@ -55,13 +87,12 @@ app.get('/perfil', async (req, res) => {
         res.json(result.rows[0]);
 
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Erro ao buscar dados do perfil' });
+        console.error("Erro ao buscar perfil:", err.message);
+        res.status(500).json({ error: 'Erro interno no servidor' });
     }
 });
 
-//rota login
-app.post('/login', async (req, res) => {
+app.post('/login', loginLimiter, async (req, res) => {
     const { email, senha } = req.body;
 
     try {
@@ -69,19 +100,19 @@ app.post('/login', async (req, res) => {
         const usuario = result.rows[0];
 
         if (!usuario) {
-            return res.status(401).json({ error: 'Email ou senha inválidos' });
+            return res.status(401).json({ error: 'Credenciais inválidas' });
         }
 
         const senhaBate = await bcrypt.compare(senha, usuario.senha);
 
         if (!senhaBate) {
-            return res.status(401).json({ error: 'Email ou senha inválidos' });
+            return res.status(401).json({ error: 'Credenciais inválidas' });
         }
 
         const token = jwt.sign(
             { id: usuario.id, email: usuario.email },
             process.env.JWT_SECRET,
-            { expiresIn: '1h' }
+            { expiresIn: '2h' }
         );
 
         res.json({
@@ -89,42 +120,51 @@ app.post('/login', async (req, res) => {
             token: token,
             usuario: { email: usuario.email }
         });
-    }
-    catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Erro no servidor' });
+    } catch (err) {
+        console.error("Erro no login:", err.message);
+        res.status(500).json({ error: 'Erro interno no servidor' });
     }
 });
-//delete
-app.delete('/projetos/:id', async (req, res) => {
 
+app.delete('/projetos/:id', autenticarToken, async (req, res) => {
     try {
         const { id } = req.params;
-        await pool.query('DELETE FROM projetos WHERE id = $1', [id]);
-        res.json({ message: "Deletado!" });
+        const result = await pool.query('DELETE FROM projetos WHERE id = $1 RETURNING *', [id]);
+        
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: "Projeto não encontrado" });
+        }
+        
+        res.json({ message: "Projeto removido com sucesso" });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Erro ao deletar" });
+        console.error("Erro ao deletar projeto:", err.message);
+        res.status(500).json({ error: "Erro interno no servidor" });
     }
-})
-
-//post
-app.post('/projetos', async (req, res) => {
-    const { titulo, descricao, imagem_url, link_repo, tags } = req.body;
-    const perfil_id = 1;
-    try {
-        const querySQL = 'INSERT INTO projetos (perfil_id, titulo, descricao, imagem_url, link_repo, tags) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *;';
-        const valores = [perfil_id, titulo, descricao, imagem_url, link_repo, tags];
-        const resultado = await pool.query(querySQL, valores);
-        res.json(resultado.rows[0]);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: "Erro ao criar projeto" });
-    }
-})
-
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-    console.log(`Servidor rodando na porta ${PORT}`)
 });
 
+app.post('/projetos', autenticarToken, async (req, res) => {
+    const { titulo, descricao, imagem_url, link_repo, link_demo, tags } = req.body;
+
+    if (!titulo || !descricao) {
+        return res.status(400).json({ error: "Título e descrição são obrigatórios" });
+    }
+
+    const perfil_id = 1; 
+    try {
+        const querySQL = `
+            INSERT INTO projetos (perfil_id, titulo, descricao, imagem_url, link_repo, link_demo, tags) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *;
+        `;
+        const valores = [perfil_id, titulo, descricao, imagem_url, link_repo, link_demo, tags];
+        const resultado = await pool.query(querySQL, valores);
+        res.json(resultado.rows[0]);
+    } catch (err) {
+        console.error("Erro ao criar projeto:", err.message);
+        res.status(500).json({ error: "Erro interno no servidor" });
+    }
+});
+
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+    console.log(`Servidor ativo na porta ${PORT}`);
+});
