@@ -14,7 +14,9 @@ app.use(helmet());
 
 const allowedOrigins = [
   'http://localhost:5173',
-  'https://curriculo-frontend.vercel.app'
+  'https://curriculo-frontend.vercel.app',
+  'https://www.igorricardo.dev',
+  'https://igorricardo.dev'
 ];
 
 app.use(cors({
