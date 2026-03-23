@@ -21,8 +21,7 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Permite localhost, o domínio principal ou QUALQUER subdomínio da Vercel do seu projeto
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
       callback(new Error('Bloqueado pelo CORS: Acesso não autorizado.'));
