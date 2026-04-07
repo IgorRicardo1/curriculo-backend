@@ -21,8 +21,8 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Em produção, remova '!origin' para não aceitar requisições de ferramentas fora do browser (como curl)
-    if (allowedOrigins.indexOf(origin) !== -1 || (!origin && process.env.NODE_ENV !== 'production')) {
+    // Permitimos requisições sem 'origin' (como apps mobile, curl, uptime robot ou acessos diretos)
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
       callback(new Error('Bloqueado pelo CORS: Acesso não autorizado.'));
