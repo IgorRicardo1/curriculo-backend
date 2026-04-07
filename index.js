@@ -21,7 +21,8 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    // Em produção, remova '!origin' para não aceitar requisições de ferramentas fora do browser (como curl)
+    if (allowedOrigins.indexOf(origin) !== -1 || (!origin && process.env.NODE_ENV !== 'production')) {
       callback(null, true);
     } else {
       callback(new Error('Bloqueado pelo CORS: Acesso não autorizado.'));
@@ -30,6 +31,14 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+// Evitar que o processo caia sem fechar o banco
+process.on('SIGINT', () => {
+    pool.end().then(() => {
+        console.log('Pool de conexões fechado. Encerrando servidor...');
+        process.exit(0);
+    });
+});
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -66,6 +75,16 @@ app.get('/', (req, res) => {
         status: "Online",
         api: "Igor Portfolio API v1.0"
     });
+});
+
+app.get('/health', async (req, res) => {
+    try {
+        await pool.query('SELECT 1');
+        res.status(200).json({ status: 'ok', message: 'Servidor e banco acordados' });
+    } catch (err) {
+        console.error("Erro na rota health:", err.message);
+        res.status(500).json({ status: 'error' });
+    }
 });
 
 app.get('/perfil', async (req, res) => {
