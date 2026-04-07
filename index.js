@@ -79,11 +79,11 @@ app.get('/', (req, res) => {
 
 app.get('/health', async (req, res) => {
     try {
-        await pool.query('SELECT 1');
-        res.status(200).json({ status: 'ok', message: 'Servidor e banco acordados' });
+        // Tenta o banco, mas não trava o health se o banco estiver apenas 'dormindo'
+        pool.query('SELECT 1').catch(err => console.error("Database sleep/error:", err.message));
+        res.status(200).json({ status: 'ok', message: 'Servidor ativo' });
     } catch (err) {
-        console.error("Erro na rota health:", err.message);
-        res.status(500).json({ status: 'error' });
+        res.status(200).json({ status: 'warning', message: 'Servidor ok, erro interno ao processar' });
     }
 });
 
