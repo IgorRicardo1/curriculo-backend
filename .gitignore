@@ -1,3 +1,4 @@
 node_modules
 .env
 gerarSenha.js
+migration.js

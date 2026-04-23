@@ -21,7 +21,6 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Permitimos requisições sem 'origin' (como apps mobile, curl, uptime robot ou acessos diretos)
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
@@ -32,7 +31,6 @@ app.use(cors({
 
 app.use(express.json());
 
-// Evitar que o processo caia sem fechar o banco
 process.on('SIGINT', () => {
     pool.end().then(() => {
         console.log('Pool de conexões fechado. Encerrando servidor...');
@@ -79,8 +77,7 @@ app.get('/', (req, res) => {
 
 app.get('/health', async (req, res) => {
     try {
-        // Tenta o banco, mas não trava o health se o banco estiver apenas 'dormindo'
-        pool.query('SELECT 1').catch(err => console.error("Database sleep/error:", err.message));
+        pool.query('SELECT 1').catch(err => console.error("DB check error:", err.message));
         res.status(200).json({ status: 'ok', message: 'Servidor ativo' });
     } catch (err) {
         res.status(200).json({ status: 'warning', message: 'Servidor ok, erro interno ao processar' });
@@ -164,7 +161,7 @@ app.delete('/projetos/:id', autenticarToken, async (req, res) => {
 });
 
 app.post('/projetos', autenticarToken, async (req, res) => {
-    const { titulo, descricao, imagem_url, link_repo, link_demo, tags } = req.body;
+    const { titulo, descricao, imagem_url, link_repo, link_demo, tags, desafio, engenharia, diferencial, galeria_urls } = req.body;
 
     if (!titulo || !descricao) {
         return res.status(400).json({ error: "Título e descrição são obrigatórios" });
@@ -173,10 +170,10 @@ app.post('/projetos', autenticarToken, async (req, res) => {
     const perfil_id = 1; 
     try {
         const querySQL = `
-            INSERT INTO projetos (perfil_id, titulo, descricao, imagem_url, link_repo, link_demo, tags) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *;
+            INSERT INTO projetos (perfil_id, titulo, descricao, imagem_url, link_repo, link_demo, tags, desafio, engenharia, diferencial, galeria_urls) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *;
         `;
-        const valores = [perfil_id, titulo, descricao, imagem_url, link_repo, link_demo, tags];
+        const valores = [perfil_id, titulo, descricao, imagem_url, link_repo, link_demo, tags, desafio, engenharia, diferencial, galeria_urls || []];
         const resultado = await pool.query(querySQL, valores);
         res.json(resultado.rows[0]);
     } catch (err) {
