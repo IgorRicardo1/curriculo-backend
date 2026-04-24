@@ -76,11 +76,26 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', async (req, res) => {
+    const start = Date.now();
     try {
-        pool.query('SELECT 1').catch(err => console.error("DB check error:", err.message));
-        res.status(200).json({ status: 'ok', message: 'Servidor ativo' });
+        await pool.query('SELECT 1');
+        const duration = Date.now() - start;
+        res.status(200).json({ 
+            status: 'ok', 
+            database: 'connected',
+            duration: `${duration}ms`,
+            timestamp: new Date().toISOString()
+        });
     } catch (err) {
-        res.status(200).json({ status: 'warning', message: 'Servidor ok, erro interno ao processar' });
+        const duration = Date.now() - start;
+        console.error("Health check failed:", err.message);
+        res.status(503).json({ 
+            status: 'error', 
+            message: 'Database connection failed',
+            error: err.message,
+            duration: `${duration}ms`,
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
